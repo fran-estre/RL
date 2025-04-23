@@ -5,7 +5,7 @@ from env import QuadrupedEnv
 env = QuadrupedEnv()
 
 # Cargar el modelo
-model = PPO.load("quadruped_ppo", env=env)
+model = PPO.load("quadruped_ppo_interrupt.zip", env=env)
 
 # Continuar entrenamiento
 model.learn(total_timesteps=500_000)  # suma a lo anterior

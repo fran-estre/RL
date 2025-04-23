@@ -1,0 +1,7 @@
+Tipo;Desde;Hasta;Distancia (m)
+Frente;FR;FL;0.163429
+Atrás;RR;RL;0.163429
+Izquierdo;FL;RL;0.437290
+Derecho;FR;RR;0.437290
+Diagonal 1;FL;RR;0.466831
+Diagonal 2;FR;RL;0.466831

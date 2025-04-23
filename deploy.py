@@ -2,7 +2,7 @@ from stable_baselines3 import PPO
 from env import QuadrupedEnv
 
 # Cargar modelo
-model = PPO.load("D:\\ITMO trabajos de la u\\tesis\\py\\testing\\quadruped_ppo.zip")
+model = PPO.load("D:\\ITMO trabajos de la u\\tesis\py\\testing\\RL\\quadruped_ppo1.zip")
 
 # Evaluar
 env = QuadrupedEnv()

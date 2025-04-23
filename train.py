@@ -22,16 +22,18 @@ model = PPO(
     device="auto"  # Usar GPU si está disponible
 )
 
-total_steps = 3_000_000
+total_steps = 10_000_000
 progress_callback = ProgressBarCallback(total_timesteps=total_steps, verbose=1)
 
 eval_callback = EvalCallback(env, best_model_save_path='./logs/',
-                             log_path='./logs/', eval_freq=50000,
+                             log_path='./logs/', eval_freq=100000,
                              deterministic=True, render=False)
 # Entrenar
 try:
     model.learn(total_timesteps=total_steps,callback=[progress_callback, eval_callback])
+    env.env_method("export_rewards", filename="reward_log.csv")
 except KeyboardInterrupt:
+    env.env_method("export_rewards", filename="reward_log.csv")
     print("\n🛑 Entrenamiento detenido manualmente. Guardando modelo actual...")
     model.save("quadruped_ppo_interrupt")
     print("✅ Modelo guardado como 'quadruped_ppo_interrupt.zip'")
