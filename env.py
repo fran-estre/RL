@@ -56,7 +56,7 @@ class QuadrupedEnv(gym.Env):
         p.setGravity(0, 0, -9.8)
 
         self.plane = p.loadURDF("plane.urdf")
-        self.robot = p.loadURDF("D:\\ITMO trabajos de la u\\tesis\\py\\testing\\pybullet_robots\\data\\laikago\\laikago_toes.urdf", [0, 0, 0.5], [0, 0.5, 0.5, 0], useFixedBase=False)
+        self.robot = p.loadURDF("laikago\\laikago_toes.urdf", [0, 0, 0.5], [0, 0.5, 0.5, 0], useFixedBase=False)
 
         p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
 
