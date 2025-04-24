@@ -13,14 +13,15 @@ class QuadrupedEnv(gym.Env):
         self.physics_client = p.connect(p.GUI)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
-        self.action_space = spaces.Box(low=-1, high=1, shape=(12,), dtype=np.float32)
+        self.controlled_joints = [1, 2, 4, 5, 7, 8, 10, 11]
+        self.action_space = spaces.Box(low=-1, high=1, shape=(len(self.controlled_joints),), dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(40,), dtype=np.float32)
-
+        self.locked_joints = [0, 3, 6, 9]  # Hip joints
         self.joint_damping = {
-            0: 12, 1: 8, 2: 6,   # Pierna frontal derecha
-            3: 12, 4: 8, 5: 6,   # Pierna frontal izquierda
-            6: 12, 7: 8, 8: 6,   # Pierna trasera derecha
-            9: 12, 10: 8, 11: 6  # Pierna trasera izquierda
+            0: 50, 1: 8, 2: 12,   # Pierna frontal derecha
+            3: 50, 4: 8, 5: 12,   # Pierna frontal izquierda
+            6: 50, 7: 8, 8: 12,   # Pierna trasera derecha
+            9: 50, 10: 8, 11: 12  # Pierna trasera izquierda
         }
 
         self.robot = None
@@ -29,7 +30,7 @@ class QuadrupedEnv(gym.Env):
         self.joint_ids = None
         self.prev_pos = None
 
-        self.initial_joint_angles_deg = np.array([0, 10, -45, 0.0, 10,-45, 0.0, 10, -45, 0.0, 10, -45])
+        self.initial_joint_angles_deg = np.array([0, 0, -45, 0.0, 0,-45, 0.0, 0, -45, 0.0, 0, -45])
         self.initial_joint_angles_rad = np.radians(self.initial_joint_angles_deg)
 
         self.initial_roll = 0
@@ -56,27 +57,20 @@ class QuadrupedEnv(gym.Env):
         p.setGravity(0, 0, -9.8)
 
         self.plane = p.loadURDF("plane.urdf")
-        self.robot = p.loadURDF("unitree_ros-master\\robots\\laikago_description\\urdf\\laikago.urdf", [0, 0, 0.5], useFixedBase=False)
+        self.robot = p.loadURDF("laikago\\laikago_toes.urdf", [0, 0, 0.5], [0, 0.5, 0.5, 0], useFixedBase=False)
 
-        p.changeDynamics(self.plane, -1, lateralFriction=3, spinningFriction=0.5, rollingFriction=0.1)
+        p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
 
-        lower_legs = ["FR_calf", "FL_calf", "RR_calf", "RR_calf"]
+        lower_legs = ["FR_lower_leg", "FL_lower_leg", "RR_lower_leg", "RL_lower_leg"]
 
         for j in range(p.getNumJoints(self.robot)):
             joint_info = p.getJointInfo(self.robot, j)
             link_name = joint_info[12].decode("utf-8")
             if link_name in lower_legs:
-                p.changeDynamics(
-                    self.robot, j,
-                    lateralFriction=3,
-                    spinningFriction=0.5,
-                    rollingFriction=0.1,
-                    contactStiffness=30000,
-                    contactDamping=2000
-                )
+                p.setCollisionFilterGroupMask(self.robot, j, 0, 0)
         
         # Ajustar fricción y dinámica de contacto para los toes
-        toe_links = ["FR_foot", "FL_foot", "RR_foot", "RR_foot"]
+        toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
         for j in range(p.getNumJoints(self.robot)):
             link_name = p.getJointInfo(self.robot, j)[12].decode("utf-8")
             if link_name in toe_links:
@@ -93,12 +87,12 @@ class QuadrupedEnv(gym.Env):
         self.joint_ids = [j for j in range(p.getNumJoints(self.robot)) if p.getJointInfo(self.robot, j)[2] == p.JOINT_REVOLUTE]
 
         self.link_name_map = {j: p.getJointInfo(self.robot, j)[12].decode('utf-8') for j in range(p.getNumJoints(self.robot))}
-        self.link_name_map[-1] = "trunk"
+        self.link_name_map[-1] = "base"
 
         for i, joint_id in enumerate(self.joint_ids):
             p.resetJointState(self.robot, joint_id, self.initial_joint_angles_rad[i])
 
-        self.target_pos = [5, 0, 0]
+        self.target_pos = [0, 5, 0]
         self.target_marker = p.loadURDF("sphere_small.urdf", self.target_pos, globalScaling=2)
 
         self.prev_pos = np.array(p.getBasePositionAndOrientation(self.robot)[0][:2])
@@ -109,8 +103,15 @@ class QuadrupedEnv(gym.Env):
 
         self.step_counter = 0
 
-        for _ in range(240 * 3):
-            p.stepSimulation()
+        # Bloquear articulaciones hip
+        for joint_index in self.locked_joints:
+            joint_id = self.joint_ids[joint_index]
+            p.setJointMotorControl2(
+                self.robot, joint_id,
+                controlMode=p.VELOCITY_CONTROL,
+                force=0
+            )
+        p.stepSimulation()
 
         return obs, {}
 
@@ -135,15 +136,27 @@ class QuadrupedEnv(gym.Env):
                                [distance_to_target], unit_target_dir, [angle_to_target]])
 
     def step(self, action):
-        max_force = 100
-        for i, j in enumerate(self.joint_ids):
-            damping_gain = self.joint_damping.get(i, 0.0)
+        max_force = 80
+        for i, joint_index in enumerate(self.controlled_joints):
+            joint_id = self.joint_ids[joint_index]
+            damping_gain = self.joint_damping.get(joint_index, 0.0)
             p.setJointMotorControl2(
-                self.robot, j,
+                self.robot, joint_id,
                 p.POSITION_CONTROL,
                 targetPosition=action[i],
                 force=max_force,
-                positionGain=0.1,
+                positionGain=0.3,
+                velocityGain=damping_gain
+            )
+        # Aplicar damping pasivo a las articulaciones hip (bloqueadas)
+        for joint_index in self.locked_joints:
+            joint_id = self.joint_ids[joint_index]
+            damping_gain = self.joint_damping.get(joint_index, 0.0)
+            p.setJointMotorControl2(
+                self.robot, joint_id,
+                controlMode=p.VELOCITY_CONTROL,
+                targetVelocity=0,
+                force=100,
                 velocityGain=damping_gain
             )
 
@@ -164,12 +177,7 @@ class QuadrupedEnv(gym.Env):
         reward, reward_info = self._compute_reward(obs)
         done = self._check_done(obs)
 
-        self.reward_log.append({
-            "step": self.step_counter,
-            "reward_movement": reward_info["reward_movement"],
-            "forward_progress": reward_info["reward_progress"]
-        })
-
+    
         return obs, reward, done, False, {"reward_breakdown": reward_info}
     
     def log_contact_info(self):
@@ -185,68 +193,74 @@ class QuadrupedEnv(gym.Env):
                 writer.writerow([self.step_counter, link_idx, link_name, normal_force, lateral_friction])
 
     def _compute_reward(self, obs):
-        torso_pos = obs[24:27]
-        roll, pitch, _ = obs[27:30]
-        direction_to_target = obs[30:32]
-        joint_velocities = obs[12:24]
-        torso_vel_lin = obs[30:32]
+            torso_pos = obs[24:27]
+            roll, pitch, _ = obs[27:30]
+            direction_to_target = obs[30:32]
+            joint_velocities = obs[12:24]
+            torso_vel_lin = obs[30:32]
+            vel_y = torso_vel_lin[1]    # Componente en el eje Y
 
-        roll_error = abs(roll - self.initial_roll)
-        pitch_error = abs(pitch - self.initial_pitch)
-        roll_limit = np.radians(10)
-        pitch_limit = np.radians(10)
-        roll_penalty = max(0, roll_error - roll_limit)
-        pitch_penalty = max(0, pitch_error - pitch_limit)
-        reward_stability = -10.0 * (roll_penalty**2 + pitch_penalty**2)
+            reward_forward_velocity = 10.0 * vel_y
+            if vel_y < 0:
+                reward_forward_velocity = 10.0 * vel_y  # o podrías usar -10.0 * abs(vel_y)
 
-        current_pos_xy = np.array(torso_pos[:2])
-        target_vec = self.target_pos[:2] - current_pos_xy
-        distance = np.linalg.norm(target_vec)
-        movement_vector = current_pos_xy - self.prev_pos
-        unit_direction = target_vec / np.linalg.norm(target_vec) if np.linalg.norm(target_vec) > 0 else np.array([0.0, 0.0])
+            roll_error = abs(roll - self.initial_roll)
+            pitch_error = abs(pitch - self.initial_pitch)
+            roll_limit = np.radians(10)
+            pitch_limit = np.radians(10)
+            roll_penalty = max(0, roll_error - roll_limit)
+            pitch_penalty = max(0, pitch_error - pitch_limit)
+            reward_stability = -10.0 * (roll_penalty**2 + pitch_penalty**2)
 
-        # Recompensa por avanzar hacia el objetivo
-        forward_progress = np.dot(movement_vector, unit_direction)
-        reward_progress = 3.0 * forward_progress
+            current_pos_xy = np.array(torso_pos[:2])
+            target_vec = self.target_pos[:2] - current_pos_xy
+            distance = np.linalg.norm(target_vec)
+            movement_vector = current_pos_xy - self.prev_pos
+            unit_direction = target_vec / np.linalg.norm(target_vec) if np.linalg.norm(target_vec) > 0 else np.array([0.0, 0.0])
 
-        # Recompensa por orientación hacia el objetivo
-        robot_yaw = obs[29]
-        robot_facing = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
-        unit_target_dir = unit_direction
-        reward_heading = 1.0 * np.dot(robot_facing, unit_target_dir)
+            # Recompensa por avanzar hacia el objetivo
+            forward_progress = np.dot(movement_vector, unit_direction)
+            reward_progress = 5.0 * forward_progress
 
-        # Recompensa por velocidad hacia el objetivo
-        reward_velocity = 4.0 * np.dot(torso_vel_lin, unit_target_dir)
+            # Recompensa por orientación hacia el objetivo
+            robot_yaw = obs[29]
+            robot_facing = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
+            unit_target_dir = unit_direction
+            reward_heading = 1.0 * np.dot(robot_facing, unit_target_dir)
 
-        # Penalización por alejarse
-        if forward_progress < 0:
-            penalty_away = -4.0 * abs(forward_progress)
-        else:
-            penalty_away = 0.0
+            # Recompensa por velocidad hacia el objetivo
+            reward_velocity = 4.0 * np.dot(torso_vel_lin, unit_target_dir)
 
-        reward_movement = reward_progress + reward_heading + reward_velocity + penalty_away
+            # Penalización por alejarse
+            if forward_progress < 0:
+                penalty_away = -10.0 * abs(forward_progress)
+            else:
+                penalty_away = 0.0
 
-        self.prev_pos = current_pos_xy
+            prev_distance = np.linalg.norm(self.prev_pos - self.target_pos[:2])
+            distance_diff = distance - prev_distance
+            reward_distance_change = -5.0 * distance_diff  # penaliza alejarse
+            self.prev_pos = current_pos_xy
 
-        reward_height = -2.0 * abs(torso_pos[2] - 0.4)
-        reward_energy = -0.005 * np.sum(np.square(joint_velocities))
-        reward_goal = 50.0 if distance < 0.3 else 0.0
-        reward_alive = 1.0
+            reward_height = -2.0 * abs(torso_pos[2] - 0.4)
+            reward_energy = -0.005 * np.sum(np.square(joint_velocities))
+            reward_goal = 50.0 if distance < 0.3 else 0.0
+            reward_alive = 1.0
 
-        components = {
-            "reward_progress": reward_progress,
-            "reward_heading": reward_heading,
-            "reward_velocity": reward_velocity,
-            "penalty_away": penalty_away,
-            "reward_movement": reward_movement,
-            "reward_height": reward_height,
-            "reward_stability": reward_stability,
-            "reward_energy": reward_energy,
-            "reward_goal": reward_goal,
-            "reward_alive": reward_alive
-        }
-        total_reward = sum(components.values())
-        return total_reward, components
+            components = {
+                "reward_distance_change":reward_distance_change,
+                "reward_progress": reward_progress,
+                "reward_heading": reward_heading,
+                "reward_velocity": reward_velocity,
+                "penalty_away": penalty_away,
+                "reward_height": reward_height,
+                "reward_stability": reward_stability,
+                "reward_energy": reward_energy,
+                "reward_goal": reward_goal,
+                "reward_alive": reward_alive
+            }
+            total_reward = sum(components.values())
+            return total_reward, components
 
     def _check_done(self, obs):
         z_pos = obs[26]
@@ -256,24 +270,14 @@ class QuadrupedEnv(gym.Env):
         fallen = z_pos < 0.1
         contact_points = p.getContactPoints(bodyA=self.robot, bodyB=self.plane)
         chassis_contact = any(cp[3] == -1 or cp[3] == 0 for cp in contact_points)
-        if fallen or chassis_contact:
-            return True
-        if np.linalg.norm(obs[24:26] - self.target_pos[:2]) < 0.3:
-            return True
-        return False
+        current_y = obs[25]
+        retroceso_excesivo = current_y < -1.0
+        reached_goal = np.linalg.norm(obs[24:26] - self.target_pos[:2]) < 0.3
+
+        return fallen or chassis_contact or retroceso_excesivo or reached_goal
 
     def render(self, mode='human'):
         pass
-    
-    def export_rewards(self, filename="reward_log.csv"):
-    
-        if not self.reward_log:
-            return
-        keys = self.reward_log[0].keys()
-        with open(filename, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=keys)
-            writer.writeheader()
-            writer.writerows(self.reward_log)
     
     def close(self):
         p.disconnect(self.physics_client)

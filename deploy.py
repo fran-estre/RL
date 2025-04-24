@@ -1,8 +1,8 @@
-from stable_baselines3 import PPO
+from stable_baselines3 import DDPG
 from env import QuadrupedEnv
 
 # Cargar modelo
-model = PPO.load("D:\\ITMO trabajos de la u\\tesis\py\\testing\\RL\\quadruped_ppo1.zip")
+model = DDPG.load("D:\\ITMO trabajos de la u\\tesis\\py\\testing\\RL\\quadruped_ddpg1.zip")
 
 # Evaluar
 env = QuadrupedEnv()

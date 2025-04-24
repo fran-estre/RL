@@ -5,7 +5,7 @@ import pybullet_data
 from gymnasium import spaces
 import csv
 import os
-
+import math
 class QuadrupedEnv(gym.Env):
     def __init__(self):
         super().__init__()
@@ -16,13 +16,11 @@ class QuadrupedEnv(gym.Env):
         self.action_space = spaces.Box(low=-1, high=1, shape=(12,), dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(40,), dtype=np.float32)
 
-        self.joint_damping = {
-            0: 12, 1: 8, 2: 12,   # Pierna frontal derecha
-            3: 12, 4: 8, 5: 12,   # Pierna frontal izquierda
-            6: 12, 7: 8, 8: 12,   # Pierna trasera derecha
-            9: 12, 10: 8, 11: 12  # Pierna trasera izquierda
+        self.position_gains = {
+                0: (1.2, 0.08),  # Hip
+                1: (1.4, 0.1), # Upper
+                2: (1.8, 0.12)   # Lower
         }
-
         self.robot = None
         self.target_pos = None
         self.target_marker = None
@@ -56,17 +54,18 @@ class QuadrupedEnv(gym.Env):
         p.setGravity(0, 0, -9.8)
 
         self.plane = p.loadURDF("plane.urdf")
-        self.robot = p.loadURDF("laikago\\laikago_toes.urdf", [0, 0, 0.5], [0, 0.5, 0.5, 0], useFixedBase=False)
+        self.robot = p.loadURDF("D:\\ITMO trabajos de la u\\tesis\\py\\testing\\pybullet_robots\\data\\laikago\\laikago_toes.urdf", 
+                     [0, 0, 0.5], [0, 0.5, 0.5, 0], useFixedBase=False)
 
         p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
 
         lower_legs = ["FR_lower_leg", "FL_lower_leg", "RR_lower_leg", "RL_lower_leg"]
 
         for j in range(p.getNumJoints(self.robot)):
-            joint_info = p.getJointInfo(self.robot, j)
-            link_name = joint_info[12].decode("utf-8")
-            if link_name in lower_legs:
-                p.setCollisionFilterGroupMask(self.robot, j, 0, 0)
+                joint_info = p.getJointInfo(self.robot, j)
+                link_name = joint_info[12].decode("utf-8")
+                if link_name in lower_legs:
+                    p.setCollisionFilterGroupMask(self.robot, j, 0, 0)
         
         # Ajustar fricción y dinámica de contacto para los toes
         toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
@@ -128,16 +127,25 @@ class QuadrupedEnv(gym.Env):
                                [distance_to_target], unit_target_dir, [angle_to_target]])
 
     def step(self, action):
-        max_force = 80
+        max_force = 40
+        limits = [
+            [-math.radians(20), math.radians(20)],   # Cadera
+            [-math.radians(60), math.radians(53)],   # Pierna superior
+            [-math.radians(90), math.radians(37)]    # Pierna inferior
+        ]
         for i, j in enumerate(self.joint_ids):
-            damping_gain = self.joint_damping.get(i, 0.0)
+            joint_type = i % 3  # 0: cadera, 1: pierna sup., 2: pierna inf.
+            low, high = limits[joint_type]
+            scaled_action = low + (action[i] + 1.0) * 0.5 * (high - low)
+            kp, kd = self.position_gains[joint_type]
+             
             p.setJointMotorControl2(
                 self.robot, j,
                 p.POSITION_CONTROL,
-                targetPosition=action[i],
+                targetPosition=scaled_action,
                 force=max_force,
-                positionGain=0.3,
-                velocityGain=damping_gain
+                positionGain=kp,
+                velocityGain=kd
             )
 
         p.stepSimulation()
@@ -157,11 +165,9 @@ class QuadrupedEnv(gym.Env):
         reward, reward_info = self._compute_reward(obs)
         done = self._check_done(obs)
 
-        self.reward_log.append({
-            "step": self.step_counter,
-            "reward_movement": reward_info["reward_movement"],
-            "forward_progress": reward_info["reward_progress"]
-        })
+        reward_entry = {"step": self.step_counter}
+        reward_entry.update(reward_info)
+        self.reward_log.append(reward_entry)
 
         return obs, reward, done, False, {"reward_breakdown": reward_info}
     
@@ -185,7 +191,7 @@ class QuadrupedEnv(gym.Env):
             torso_vel_lin = obs[30:32]
             vel_y = torso_vel_lin[1]    # Componente en el eje Y
 
-            reward_forward_velocity = 10.0 * vel_y
+            reward_forward_velocity = 4 * vel_y
             if vel_y < 0:
                 reward_forward_velocity = 10.0 * vel_y  # o podrías usar -10.0 * abs(vel_y)
 
@@ -211,10 +217,10 @@ class QuadrupedEnv(gym.Env):
             robot_yaw = obs[29]
             robot_facing = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
             unit_target_dir = unit_direction
-            reward_heading = 1.0 * np.dot(robot_facing, unit_target_dir)
+            reward_heading = 0.5 * np.dot(robot_facing, unit_target_dir)
 
             # Recompensa por velocidad hacia el objetivo
-            reward_velocity = 4.0 * np.dot(torso_vel_lin, unit_target_dir)
+            reward_velocity = 10.0 * np.dot(torso_vel_lin, unit_target_dir)
 
             # Penalización por alejarse
             if forward_progress < 0:
@@ -230,12 +236,13 @@ class QuadrupedEnv(gym.Env):
 
             self.prev_pos = current_pos_xy
 
-            reward_height = -2.0 * abs(torso_pos[2] - 0.4)
-            reward_energy = -0.005 * np.sum(np.square(joint_velocities))
+            reward_height = -4.0 * abs(torso_pos[2] - 0.4)
+            reward_energy = -0.01 * np.sum(np.square(joint_velocities))
             reward_goal = 50.0 if distance < 0.3 else 0.0
             reward_alive = 1.0
 
             components = {
+                ":reward_forward_velocity":reward_forward_velocity,
                 "reward_distance_change":reward_distance_change,
                 "reward_progress": reward_progress,
                 "reward_heading": reward_heading,
@@ -257,7 +264,7 @@ class QuadrupedEnv(gym.Env):
         roll, pitch, _ = obs[27:30]
         delta_roll = abs(roll - self.initial_roll)
         delta_pitch = abs(pitch - self.initial_pitch)
-        fallen = z_pos < 0.1
+        fallen = z_pos < 0.15
         contact_points = p.getContactPoints(bodyA=self.robot, bodyB=self.plane)
         chassis_contact = any(cp[3] == -1 or cp[3] == 0 for cp in contact_points)
         current_y = obs[25]
@@ -270,7 +277,6 @@ class QuadrupedEnv(gym.Env):
         pass
 
     def export_rewards(self, filename="reward_log.csv"):
-    
         if not self.reward_log:
             return
         keys = self.reward_log[0].keys()
