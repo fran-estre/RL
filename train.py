@@ -1,42 +1,46 @@
-from stable_baselines3 import DDPG
-from stable_baselines3.common.env_util import make_vec_env
+import gymnasium as gym
+from stable_baselines3 import PPO      # SAC o TD3 también funcionan
+from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.callbacks import BaseCallback
 from env import QuadrupedEnv
-from stable_baselines3.common.callbacks import EvalCallback
-from progress_callback import ProgressBarCallback
+import os
 
-# Crear entorno vectorizado (opcional para paralelismo)
-env = make_vec_env(QuadrupedEnv, n_envs=1, wrapper_class=None)
+class StepPrinter(BaseCallback):
+    def _on_step(self) -> bool:
+        print("Timestep =", self.num_timesteps)       # global SB3
+        local_steps = self.training_env.get_attr("step_counter")[0]
+        print("Step env[0] =", local_steps)
+        return True
 
-# Configurar el modelo DDPG
-model = DDPG(
-    "MlpPolicy",
-    env,
-    verbose=1,
-    learning_rate=2.5e-4,
-    buffer_size=1000000,
-    batch_size=128,
-    gamma=0.99,
-    tau=0.005,
-    device="auto"
-)
+def make_env():
+    # Devuelve una función que instanciará el entorno
+    def _init():
+        return QuadrupedEnv()
+    return _init
+if __name__ == "__main__":
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   # opcional, si usas Intel MKL
+    num_envs = 4
+    vec_env = SubprocVecEnv([make_env() for _ in range(num_envs)],
+                            start_method="spawn")   # explícito, aunque spawn es el default en Win
+    model = PPO(
+        "MlpPolicy",
+        vec_env,
+        learning_rate=3e-4,
+        n_steps=2048,
+        batch_size=512,
+        gamma=0.99,
+        clip_range=0.2,
+        ent_coef=0.0,
+        verbose=1,
+    )
+    try:
+        model.learn(total_timesteps=2_000_000,callback=StepPrinter())
+        model.save("laikago_ppo_angles")
+    
+    except KeyboardInterrupt:
+        print("\n🛑 Entrenamiento detenido manualmente. Guardando modelo actual...")
+        model.save("laikago_ppo_angles_interrupt")
+        print("✅ Modelo guardado como 'quadruped_ddpg_interrupt.zip'")
+    model.save("quadruped_ddpg1")
 
-total_steps = 500_000
-progress_callback = ProgressBarCallback(total_timesteps=total_steps, verbose=1)
 
-eval_callback = EvalCallback(env, best_model_save_path='./logs/',
-                             log_path='./logs/', eval_freq=100000,
-                             deterministic=True, render=False)
-
-# Entrenar
-try:
-    model.learn(total_timesteps=total_steps, callback=[progress_callback, eval_callback])
-    env.env_method("export_rewards", filename="reward_log.csv")
-except KeyboardInterrupt:
-    env.env_method("export_rewards", filename="reward_log.csv")
-    print("\n🛑 Entrenamiento detenido manualmente. Guardando modelo actual...")
-    model.save("quadruped_ddpg_interrupt")
-    print("✅ Modelo guardado como 'quadruped_ddpg_interrupt.zip'")
-model.save("quadruped_ddpg1")
-
-# Cerrar entorno
-env.close()

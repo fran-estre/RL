@@ -3,47 +3,27 @@ import numpy as np
 import pybullet as p
 import pybullet_data
 from gymnasium import spaces
-import csv
-import os
 import math
-class QuadrupedEnv(gym.Env):
-    def __init__(self):
-        super().__init__()
+import os
 
-        self.physics_client = p.connect(p.GUI)
+class QuadrupedEnv(gym.Env):      
+    def __init__(self, render_mode=None):
+        super().__init__()
+        mode = p.GUI if render_mode == "human" else p.DIRECT
+        self.physics_client = p.connect(mode)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
-        self.action_space = spaces.Box(low=-1, high=1, shape=(12,), dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(40,), dtype=np.float32)
-
-        self.position_gains = {
-                0: (1.2, 0.08),  # Hip
-                1: (1.4, 0.1), # Upper
-                2: (1.8, 0.12)   # Lower
-        }
+        self.action_space = spaces.Box(-1.0, 1.0, (12,), np.float32)
+        self.observation_space = spaces.Box(-np.inf, np.inf, (33,), np.float32)
         self.robot = None
-        self.target_pos = None
-        self.target_marker = None
         self.joint_ids = None
-        self.prev_pos = None
 
         self.initial_joint_angles_deg = np.array([0, 0, -45, 0.0, 0,-45, 0.0, 0, -45, 0.0, 0, -45])
         self.initial_joint_angles_rad = np.radians(self.initial_joint_angles_deg)
 
         self.initial_roll = 0
         self.initial_pitch = 0
-        self.reward_log = []
         self.step_counter = 0
-        self.log_file = "joint_velocities_log.csv"
-        with open(self.log_file, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow([f"joint_{i}" for i in range(12)])
-        
-        self.contact_log_file = "contact_info_log.csv"
-        with open(self.contact_log_file, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["step", "link_index", "link_name", "normal_force", "lateral_friction"])
-
         self.reset()
 
     def reset(self, seed=None, options=None):
@@ -54,8 +34,8 @@ class QuadrupedEnv(gym.Env):
         p.setGravity(0, 0, -9.8)
 
         self.plane = p.loadURDF("plane.urdf")
-        self.robot = p.loadURDF("D:\\ITMO trabajos de la u\\tesis\\py\\testing\\pybullet_robots\\data\\laikago\\laikago_toes.urdf", 
-                     [0, 0, 0.5], [0, 0.5, 0.5, 0], useFixedBase=False)
+        self.robot = p.loadURDF("laikago/laikago_toes_zup.urdf", 
+                     [0, 0, 0.48], useFixedBase=False)
 
         p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
 
@@ -77,7 +57,7 @@ class QuadrupedEnv(gym.Env):
                     lateralFriction=3,
                     spinningFriction=0.5,
                     rollingFriction=0.1,
-                    contactStiffness=30000,
+                    contactStiffness=3000,
                     contactDamping=2000
                 )
 
@@ -89,11 +69,6 @@ class QuadrupedEnv(gym.Env):
 
         for i, joint_id in enumerate(self.joint_ids):
             p.resetJointState(self.robot, joint_id, self.initial_joint_angles_rad[i])
-
-        self.target_pos = [0, 5, 0]
-        self.target_marker = p.loadURDF("sphere_small.urdf", self.target_pos, globalScaling=2)
-
-        self.prev_pos = np.array(p.getBasePositionAndOrientation(self.robot)[0][:2])
 
         obs = self._get_obs()
         self.initial_roll = obs[27]
@@ -114,176 +89,80 @@ class QuadrupedEnv(gym.Env):
         torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
         torso_euler = p.getEulerFromQuaternion(torso_orn)
         torso_vel_lin, torso_vel_ang = p.getBaseVelocity(self.robot)
-
-        direction_to_target = self.target_pos[:2] - np.array(torso_pos[:2])
-        distance_to_target = np.linalg.norm(direction_to_target)
-
-        robot_yaw = torso_euler[2]
-        robot_facing = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
-        unit_target_dir = direction_to_target / distance_to_target if distance_to_target > 0 else np.array([1.0, 0.0])
-        angle_to_target = np.arccos(np.clip(np.dot(robot_facing, unit_target_dir), -1.0, 1.0))
-
-        return np.concatenate([joint_pos, joint_vel, torso_pos, torso_euler, torso_vel_lin, torso_vel_ang,
-                               [distance_to_target], unit_target_dir, [angle_to_target]])
+       
+        return np.concatenate([joint_pos,#12
+                         joint_vel,#12
+                         torso_vel_lin, #3       # vx,vy,vz
+                         torso_vel_ang, #3       # wx,wy,wz
+                         torso_euler])    #3     # roll,pitch,yaw
 
     def step(self, action):
         max_force = 40
-        limits = [
-            [-math.radians(20), math.radians(20)],   # Cadera
-            [-math.radians(60), math.radians(53)],   # Pierna superior
-            [-math.radians(90), math.radians(37)]    # Pierna inferior
-        ]
+        
+         # offsets de la pose neutra (deg→rad)
+        neutral = np.radians([0, 0, -45]*4)
+        span_pos = np.array([math.radians(20),
+                      math.radians(57),
+                      math.radians(65)])     # rango simétrico aprox
         for i, j in enumerate(self.joint_ids):
-            joint_type = i % 3  # 0: cadera, 1: pierna sup., 2: pierna inf.
-            low, high = limits[joint_type]
-            scaled_action = low + (action[i] + 1.0) * 0.5 * (high - low)
-            kp, kd = self.position_gains[joint_type]
+            jt = i % 3
+            scaled_action = neutral[i] + action[i]*span_pos[jt]
              
             p.setJointMotorControl2(
                 self.robot, j,
                 p.POSITION_CONTROL,
                 targetPosition=scaled_action,
                 force=max_force,
-                positionGain=kp,
-                velocityGain=kd
             )
 
         p.stepSimulation()
-
         self.step_counter += 1
-        if self.step_counter % 10 == 0:
-            joint_states = p.getJointStates(self.robot, self.joint_ids)
-            joint_velocities = [round(s[1], 4) for s in joint_states]
-            with open(self.log_file, mode='a', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow(joint_velocities)
-
-        if self.step_counter % 10 == 0:
-            self.log_contact_info()
-
         obs = self._get_obs()
-        reward, reward_info = self._compute_reward(obs)
+        reward= self._compute_reward(obs)
         done = self._check_done(obs)
 
-        reward_entry = {"step": self.step_counter}
-        reward_entry.update(reward_info)
-        self.reward_log.append(reward_entry)
-
-        return obs, reward, done, False, {"reward_breakdown": reward_info}
-    
-    def log_contact_info(self):
-        contacts = p.getContactPoints(bodyA=self.robot, bodyB=self.plane)
-        with open(self.contact_log_file, mode='a', newline='') as file:
-            writer = csv.writer(file)
-            for contact in contacts:
-                link_idx = contact[3]
-                link_name = self.link_name_map.get(link_idx, f"link_{link_idx}")
-                normal_force = contact[9]
-                dynamics_info = p.getDynamicsInfo(self.robot, link_idx)
-                lateral_friction = dynamics_info[1] if dynamics_info else None
-                writer.writerow([self.step_counter, link_idx, link_name, normal_force, lateral_friction])
-
+        return obs, reward, done, False, {}
+  
     def _compute_reward(self, obs):
-            torso_pos = obs[24:27]
             roll, pitch, _ = obs[27:30]
-            direction_to_target = obs[30:32]
             joint_velocities = obs[12:24]
-            torso_vel_lin = obs[30:32]
-            vel_y = torso_vel_lin[1]    # Componente en el eje Y
+            torso_vel_lin = obs[24:27]
 
-            reward_forward_velocity = 4 * vel_y
-            if vel_y < 0:
-                reward_forward_velocity = 10.0 * vel_y  # o podrías usar -10.0 * abs(vel_y)
+            vel_x = torso_vel_lin[0]
+            reward_speed = 5.0 * vel_x                                 # avance +X
 
-            roll_error = abs(roll - self.initial_roll)
-            pitch_error = abs(pitch - self.initial_pitch)
-            roll_limit = np.radians(10)
-            pitch_limit = np.radians(10)
-            roll_penalty = max(0, roll_error - roll_limit)
-            pitch_penalty = max(0, pitch_error - pitch_limit)
-            reward_stability = -10.0 * (roll_penalty**2 + pitch_penalty**2)
+            # imitación Raibert
+            q_ref = self._raibert_reference()
+            imit = -2.0 * np.mean(np.abs(q_ref - obs[0:12]))
 
-            current_pos_xy = np.array(torso_pos[:2])
-            target_vec = self.target_pos[:2] - current_pos_xy
-            distance = np.linalg.norm(target_vec)
-            movement_vector = current_pos_xy - self.prev_pos
-            unit_direction = target_vec / np.linalg.norm(target_vec) if np.linalg.norm(target_vec) > 0 else np.array([0.0, 0.0])
+            reward_stability = -2.0 * (abs(roll)+abs(pitch))
 
-            # Recompensa por avanzar hacia el objetivo
-            forward_progress = np.dot(movement_vector, unit_direction)
-            reward_progress = 5.0 * forward_progress
+            reward_energy = -1e-3 * np.sum(np.square(joint_velocities))
 
-            # Recompensa por orientación hacia el objetivo
-            robot_yaw = obs[29]
-            robot_facing = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
-            unit_target_dir = unit_direction
-            reward_heading = 0.5 * np.dot(robot_facing, unit_target_dir)
-
-            # Recompensa por velocidad hacia el objetivo
-            reward_velocity = 10.0 * np.dot(torso_vel_lin, unit_target_dir)
-
-            # Penalización por alejarse
-            if forward_progress < 0:
-                penalty_away = -10.0 * abs(forward_progress)
-            else:
-                penalty_away = 0.0
-
-            prev_distance = np.linalg.norm(self.prev_pos - self.target_pos[:2])
-            distance_diff = distance - prev_distance
-            reward_distance_change = -5.0 * distance_diff  # penaliza alejarse
-
-            reward_movement = reward_progress + reward_heading + reward_velocity + penalty_away
-
-            self.prev_pos = current_pos_xy
-
-            reward_height = -4.0 * abs(torso_pos[2] - 0.4)
-            reward_energy = -0.01 * np.sum(np.square(joint_velocities))
-            reward_goal = 50.0 if distance < 0.3 else 0.0
-            reward_alive = 1.0
-
-            components = {
-                ":reward_forward_velocity":reward_forward_velocity,
-                "reward_distance_change":reward_distance_change,
-                "reward_progress": reward_progress,
-                "reward_heading": reward_heading,
-                "reward_velocity": reward_velocity,
-                "penalty_away": penalty_away,
-                "reward_movement": reward_movement,
-                "reward_height": reward_height,
-                "reward_stability": reward_stability,
-                "reward_energy": reward_energy,
-                "reward_goal": reward_goal,
-                "reward_alive": reward_alive
-            }
-            total_reward = sum(components.values())
-            return total_reward, components
-
+            total_reward = reward_speed + imit + reward_stability + reward_energy
+            return total_reward
 
     def _check_done(self, obs):
-        z_pos = obs[26]
+        torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
+        z_pos = torso_pos[2]  
         roll, pitch, _ = obs[27:30]
-        delta_roll = abs(roll - self.initial_roll)
-        delta_pitch = abs(pitch - self.initial_pitch)
-        fallen = z_pos < 0.15
-        contact_points = p.getContactPoints(bodyA=self.robot, bodyB=self.plane)
-        chassis_contact = any(cp[3] == -1 or cp[3] == 0 for cp in contact_points)
-        current_y = obs[25]
-        retroceso_excesivo = current_y < -1.0
-        reached_goal = np.linalg.norm(obs[24:26] - self.target_pos[:2]) < 0.3
 
-        return fallen or chassis_contact or retroceso_excesivo or reached_goal
+        fallen = z_pos < 0.15 
+        return fallen
+        
+    def _raibert_reference(self):
+        """Devuelve ángulos deseados de un patrón trot Raibert (sencillo)."""
+        t = self.step_counter * 0.01
+        step = 0.15                   # amplitud rad
+        period = 0.5                  # s
+        phase = (2*np.pi*t/period)    # 0..2π
+        hip  = step*np.sin(phase)
+        knee = -0.5 + 0.5*np.sin(phase)   # flex-ext
+        pattern = [hip, knee, -knee]  # por pata
+        return np.tile(pattern, 4)
 
     def render(self, mode='human'):
         pass
-
-    def export_rewards(self, filename="reward_log.csv"):
-        if not self.reward_log:
-            return
-        keys = self.reward_log[0].keys()
-        with open(filename, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=keys)
-            writer.writeheader()
-            writer.writerows(self.reward_log)
-    
+  
     def close(self):
         p.disconnect(self.physics_client)
