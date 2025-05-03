@@ -127,10 +127,12 @@ class QuadrupedEnv(gym.Env):
             roll, pitch, _ = obs[27:30]
             joint_velocities = obs[12:24]
             torso_vel_lin = obs[24:27]
-
+            torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
+            z_pos = torso_pos[2]  
             vel_x = torso_vel_lin[0]
             reward_speed = 5.0 * vel_x                                 # avance +X
-
+            z0 = 0.42   # altura nominal
+            reward_height = -10.0 * abs(z_pos - z0)
             # imitación Raibert
             q_ref = self._raibert_reference()
             imit = -2.0 * np.mean(np.abs(q_ref - obs[0:12]))
@@ -139,7 +141,7 @@ class QuadrupedEnv(gym.Env):
 
             reward_energy = -1e-3 * np.sum(np.square(joint_velocities))
 
-            total_reward = reward_speed + imit + reward_stability + reward_energy
+            total_reward = reward_speed + imit + reward_stability + reward_energy+reward_height
             return total_reward
 
     def _check_done(self, obs):
