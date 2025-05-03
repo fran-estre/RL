@@ -35,7 +35,7 @@ class QuadrupedEnv(gym.Env):
 
         self.plane = p.loadURDF("plane.urdf")
         self.robot = p.loadURDF("laikago/laikago_toes_zup.urdf", 
-                     [0, 0, 0.48],[0, 0, 0, 1],useFixedBase=False)
+                     [0, 0, 0.6],[0, 0, 0, 1],useFixedBase=False)
 
         p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
 
@@ -76,8 +76,8 @@ class QuadrupedEnv(gym.Env):
 
         self.step_counter = 0
 
-        for _ in range(240 * 3):
-            p.stepSimulation()
+        
+        p.stepSimulation()
 
         return obs, {}
 
@@ -124,7 +124,7 @@ class QuadrupedEnv(gym.Env):
         return obs, reward, done, False, {}
   
     def _compute_reward(self, obs):
-            roll, pitch, _ = obs[27:30]
+            roll, pitch, _ = obs[30:33]
             joint_velocities = obs[12:24]
             torso_vel_lin = obs[24:27]
             torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
@@ -132,7 +132,7 @@ class QuadrupedEnv(gym.Env):
             vel_x = torso_vel_lin[0]
             reward_speed = 5.0 * vel_x                                 # avance +X
             z0 = 0.42   # altura nominal
-            reward_height = -10.0 * abs(z_pos - z0)
+            reward_height = -20.0 * abs(z_pos - z0)
             reward_time=1
             reward_stability = -2.0 * (abs(roll)+abs(pitch))
 
@@ -144,10 +144,10 @@ class QuadrupedEnv(gym.Env):
     def _check_done(self, obs):
         torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
         z_pos = torso_pos[2]  
-        roll, pitch, _ = obs[27:30]
-        #print(f"Initial roll = {roll:.4f}, pitch = {pitch:.4f}")
+        roll, pitch, _ = obs[30:33]
         
-        fallen = z_pos < 0.20  
+        
+        fallen = z_pos < 0.20 or abs(roll)>0.7 or abs(pitch)>0.7 
         return fallen
           
     def render(self, mode='human'):
