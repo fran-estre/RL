@@ -1,4 +1,5 @@
 import gymnasium as gym
+from stable_baselines3.common.monitor import Monitor
 from stable_baselines3 import PPO      # SAC o TD3 también funcionan
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.callbacks import BaseCallback
@@ -12,36 +13,61 @@ class StepPrinter(BaseCallback):
         print("Step env[0] =", local_steps)
         return True
 
-def make_env():
-    # Devuelve una función que instanciará el entorno
+def make_env(render_mode, log_dir, rank):
+    """
+    Devuelve un constructor de entorno que:
+     - usa GUI si render_mode="human", DIRECT si None
+     - envuelve el entorno con Monitor para loguear en log_dir/env_{rank}/monitor.csv
+    """
     def _init():
-        return QuadrupedEnv()
+        env = QuadrupedEnv(render_mode=render_mode)
+        env = Monitor(
+            env,
+            filename=os.path.join(log_dir, f"env_{rank}", "monitor.csv"),
+            allow_early_resets=True
+        )
+        return env
     return _init
+
 if __name__ == "__main__":
-    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   # opcional, si usas Intel MKL
+    # 1) Crear directorio de logs
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+
+    # 2) Número de entornos paralelos
     num_envs = 8
-    vec_env = SubprocVecEnv([make_env() for _ in range(num_envs)],
-                            start_method="spawn")   # explícito, aunque spawn es el default en Win
+
+    # 3) Construir las fábricas de entornos (todos headless)
+    env_fns = []
+    for i in range(num_envs):
+        env_fns.append(make_env(render_mode=None, log_dir=log_dir, rank=i))
+
+    # 4) Vectorizar
+    vec_env = SubprocVecEnv(env_fns, start_method="spawn")
+
+    # 5) Crear el modelo PPO (sin tensorboard)
     model = PPO(
         "MlpPolicy",
         vec_env,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=512,
-        gamma=0.99,
-        clip_range=0.2,
-        ent_coef=0.0,
         verbose=1,
+        learning_rate=3e-4,
     )
+
     try:
-        model.learn(total_timesteps=2_000_000,callback=StepPrinter())
+        model.learn(
+            total_timesteps=2_000_000
+        )   
         print("simulacion terminada")
         model.save("laikago_ppo_angles")
-    
+        vec_env.close()
+        print("Entrenamiento completado. Logs en 'logs/env_*'/monitor.csv")
     except KeyboardInterrupt:
         print("\n🛑 Entrenamiento detenido manualmente. Guardando modelo actual...")
         model.save("laikago_ppo_angles_interrupt")
         print("✅ Modelo guardado como 'quadruped_ddpg_interrupt.zip'")
+        vec_env.close()
+        print("Entrenamiento completado. Logs en 'logs/env_*'/monitor.csv")
+
     model.save("quadruped_ddpg1")
 
 
