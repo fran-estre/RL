@@ -71,14 +71,10 @@ class QuadrupedEnv(gym.Env):
           #  p.resetJointState(self.robot, joint_id, self.initial_joint_angles_rad[i])
 
         obs = self._get_obs()
-        self.initial_roll = obs[27]
-        self.initial_pitch = obs[28]
-
         self.step_counter = 0
-
-        
-        p.stepSimulation()
-
+        for _ in(240*3):
+            p.stepSimulation()
+            
         return obs, {}
 
     def _get_obs(self):

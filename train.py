@@ -35,7 +35,7 @@ if __name__ == "__main__":
     os.makedirs(log_dir, exist_ok=True)
 
     # 2) Número de entornos paralelos
-    num_envs = 8
+    num_envs = 4
 
     # 3) Construir las fábricas de entornos (todos headless)
     env_fns = []
