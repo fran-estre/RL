@@ -148,7 +148,7 @@ class QuadrupedEnv(gym.Env):
         torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
         z_pos = torso_pos[2]  
         roll, pitch, _ = obs[27:30]
-        print(f"Initial roll = {roll:.4f}, pitch = {pitch:.4f}")
+        #print(f"Initial roll = {roll:.4f}, pitch = {pitch:.4f}")
         
         fallen = z_pos < 0.15  
         return fallen
