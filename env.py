@@ -41,14 +41,14 @@ class QuadrupedEnv(gym.Env):
 
         lower_legs = ["FR_lower_leg", "FL_lower_leg", "RR_lower_leg", "RL_lower_leg"]
 
-        for j in range(p.getNumJoints(self.robot)):
+        '''for j in range(p.getNumJoints(self.robot)):
                 joint_info = p.getJointInfo(self.robot, j)
                 link_name = joint_info[12].decode("utf-8")
                 if link_name in lower_legs:
-                    p.setCollisionFilterGroupMask(self.robot, j, 0, 0)
+                    p.setCollisionFilterGroupMask(self.robot, j, 0, 0)'''
         
         # Ajustar fricción y dinámica de contacto para los toes
-        toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
+        '''toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
         for j in range(p.getNumJoints(self.robot)):
             link_name = p.getJointInfo(self.robot, j)[12].decode("utf-8")
             if link_name in toe_links:
@@ -57,9 +57,9 @@ class QuadrupedEnv(gym.Env):
                     lateralFriction=3,
                     spinningFriction=1,
                     rollingFriction=0.4,
-                    contactStiffness=3000,
+                    contactStiffness=30000,
                     contactDamping=2000
-                )
+                )'''
 
 
         self.joint_ids = [j for j in range(p.getNumJoints(self.robot)) if p.getJointInfo(self.robot, j)[2] == p.JOINT_REVOLUTE]
@@ -97,7 +97,7 @@ class QuadrupedEnv(gym.Env):
                          torso_euler])    #3     # roll,pitch,yaw
 
     def step(self, action):
-        max_force = 60
+        max_force = 70
         
          # offsets de la pose neutra (deg→rad)
         neutral = np.radians([0, 0, -45]*4)
@@ -133,15 +133,12 @@ class QuadrupedEnv(gym.Env):
             reward_speed = 5.0 * vel_x                                 # avance +X
             z0 = 0.42   # altura nominal
             reward_height = -10.0 * abs(z_pos - z0)
-            # imitación Raibert
-            q_ref = self._raibert_reference()
-            imit = -2.0 * np.mean(np.abs(q_ref - obs[0:12]))
             reward_time=1
             reward_stability = -2.0 * (abs(roll)+abs(pitch))
 
             reward_energy = -1e-3 * np.sum(np.square(joint_velocities))
 
-            total_reward = reward_speed +reward_time+ imit + reward_stability + reward_energy+reward_height
+            total_reward = reward_speed +reward_time+ reward_stability + reward_energy+reward_height
             return total_reward
 
     def _check_done(self, obs):
@@ -150,20 +147,9 @@ class QuadrupedEnv(gym.Env):
         roll, pitch, _ = obs[27:30]
         #print(f"Initial roll = {roll:.4f}, pitch = {pitch:.4f}")
         
-        fallen = z_pos < 0.15  
+        fallen = z_pos < 0.20  
         return fallen
-        
-    def _raibert_reference(self):
-        """Devuelve ángulos deseados de un patrón trot Raibert (sencillo)."""
-        t = self.step_counter * 0.01
-        step = 0.15                   # amplitud rad
-        period = 0.5                  # s
-        phase = (2*np.pi*t/period)    # 0..2π
-        hip  = step*np.sin(phase)
-        knee = -0.5 + 0.5*np.sin(phase)   # flex-ext
-        pattern = [hip, knee, -knee]  # por pata
-        return np.tile(pattern, 4)
-
+          
     def render(self, mode='human'):
         pass
   

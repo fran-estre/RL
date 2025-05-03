@@ -19,7 +19,7 @@ def make_env():
     return _init
 if __name__ == "__main__":
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   # opcional, si usas Intel MKL
-    num_envs = 4
+    num_envs = 8
     vec_env = SubprocVecEnv([make_env() for _ in range(num_envs)],
                             start_method="spawn")   # explícito, aunque spawn es el default en Win
     model = PPO(
@@ -35,6 +35,7 @@ if __name__ == "__main__":
     )
     try:
         model.learn(total_timesteps=2_000_000,callback=StepPrinter())
+        print("simulacion terminada")
         model.save("laikago_ppo_angles")
     
     except KeyboardInterrupt:
