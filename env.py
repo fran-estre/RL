@@ -35,7 +35,7 @@ class QuadrupedEnv(gym.Env):
 
         self.plane = p.loadURDF("plane.urdf")
         self.robot = p.loadURDF("laikago/laikago_toes_zup.urdf", 
-                     [0, 0, 0.48], useFixedBase=False)
+                     [0, 0, 0.48],[0, 0, 0, 1],useFixedBase=False)
 
         p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
 
@@ -55,8 +55,8 @@ class QuadrupedEnv(gym.Env):
                 p.changeDynamics(
                     self.robot, j,
                     lateralFriction=3,
-                    spinningFriction=0.5,
-                    rollingFriction=0.1,
+                    spinningFriction=1,
+                    rollingFriction=0.4,
                     contactStiffness=3000,
                     contactDamping=2000
                 )
@@ -67,8 +67,8 @@ class QuadrupedEnv(gym.Env):
         self.link_name_map = {j: p.getJointInfo(self.robot, j)[12].decode('utf-8') for j in range(p.getNumJoints(self.robot))}
         self.link_name_map[-1] = "base"
 
-        for i, joint_id in enumerate(self.joint_ids):
-            p.resetJointState(self.robot, joint_id, self.initial_joint_angles_rad[i])
+        #for i, joint_id in enumerate(self.joint_ids):
+          #  p.resetJointState(self.robot, joint_id, self.initial_joint_angles_rad[i])
 
         obs = self._get_obs()
         self.initial_roll = obs[27]
@@ -89,7 +89,7 @@ class QuadrupedEnv(gym.Env):
         torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
         torso_euler = p.getEulerFromQuaternion(torso_orn)
         torso_vel_lin, torso_vel_ang = p.getBaseVelocity(self.robot)
-       
+        
         return np.concatenate([joint_pos,#12
                          joint_vel,#12
                          torso_vel_lin, #3       # vx,vy,vz
@@ -97,7 +97,7 @@ class QuadrupedEnv(gym.Env):
                          torso_euler])    #3     # roll,pitch,yaw
 
     def step(self, action):
-        max_force = 40
+        max_force = 60
         
          # offsets de la pose neutra (deg→rad)
         neutral = np.radians([0, 0, -45]*4)
@@ -136,20 +136,21 @@ class QuadrupedEnv(gym.Env):
             # imitación Raibert
             q_ref = self._raibert_reference()
             imit = -2.0 * np.mean(np.abs(q_ref - obs[0:12]))
-
+            reward_time=1
             reward_stability = -2.0 * (abs(roll)+abs(pitch))
 
             reward_energy = -1e-3 * np.sum(np.square(joint_velocities))
 
-            total_reward = reward_speed + imit + reward_stability + reward_energy+reward_height
+            total_reward = reward_speed +reward_time+ imit + reward_stability + reward_energy+reward_height
             return total_reward
 
     def _check_done(self, obs):
         torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
         z_pos = torso_pos[2]  
         roll, pitch, _ = obs[27:30]
-
-        fallen = z_pos < 0.15 
+        print(f"Initial roll = {roll:.4f}, pitch = {pitch:.4f}")
+        
+        fallen = z_pos < 0.15  
         return fallen
         
     def _raibert_reference(self):
