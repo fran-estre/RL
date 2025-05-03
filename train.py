@@ -49,6 +49,7 @@ if __name__ == "__main__":
     model = PPO(
         "MlpPolicy",
         vec_env,
+        device="cpu",
         verbose=1,
         learning_rate=3e-4,
     )
