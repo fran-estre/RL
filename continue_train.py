@@ -9,7 +9,7 @@ para Laikago en QuadrupedEnv.
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv
-from env_rough import QuadrupedEnv
+from env_flat import QuadrupedEnv
 #from env import QuadrupedEnv
 def make_env(rank, seed=0):
     def _init():
@@ -34,10 +34,10 @@ if __name__ == "__main__":
     model.learn(
         total_timesteps=1000000,
         reset_num_timesteps=False,
-        tb_log_name="PPO_parallel_angles_continued"
+        tb_log_name="PPO_flat_angles_continued"
     )
 
     # 5) Guarda
-    model.save("laikago_ppo_angles_parallel.zip")
+    model.save("laikago_ppo_angles_flat.zip")
     envs.close()
 

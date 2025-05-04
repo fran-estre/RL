@@ -182,9 +182,9 @@ class QuadrupedEnv(gym.Env):
             # penalizacion por altura menor a 0.42
             reward_height = -20.0 * abs(z_pos - z0)
             # refuerzo por mantenerse vivo
-            reward_time=1
+            reward_time=2
             #penalizacion por rotar demasiado 
-            reward_stability = -2.0 * (abs(roll)+abs(pitch)+abs(yaw))
+            reward_stability = -4.0 * (abs(roll)+abs(pitch)+abs(yaw))
             #penalizacion por velocidades demasiado altas en las piernas
             reward_energy = -1e-3 * np.sum(np.square(joint_velocities))
 
