@@ -178,7 +178,7 @@ class QuadrupedEnv(gym.Env):
             delta = action - self.last_action
             reward_action = -0.1 * np.sum(delta**2)
             # avance +X
-            reward_speed = 5.0 * vel_x    
+            reward_speed = 4.0 * vel_x    
             # penalizacion por altura menor a 0.42
             reward_height = -20.0 * abs(z_pos - z0)
             # refuerzo por mantenerse vivo

@@ -14,13 +14,13 @@ from env_rough import QuadrupedEnv
 def make_env(rank, seed=0):
     def _init():
         env = QuadrupedEnv(render_mode=None)
-        env.seed(seed + rank)
+        
         return env
     return _init
 
 if __name__ == "__main__":
     # 1) Carga tu modelo
-    model = PPO.load("laikago_ppo_angles.zip", device="cpu")
+    model = PPO.load("laikago_ppo_angles.zip")
     print("Modelo cargado. timesteps =", model.num_timesteps)
 
     # 2) Crea un VecEnv con 8 procesos
@@ -32,9 +32,9 @@ if __name__ == "__main__":
 
     # 4) Continúa entrenando (por ejemplo 2e6 pasos más)
     model.learn(
-        total_timesteps=2_000_000,
+        total_timesteps=1000000,
         reset_num_timesteps=False,
-        tb_log_name="PPO_parallel_continued"
+        tb_log_name="PPO_parallel_angles_continued"
     )
 
     # 5) Guarda

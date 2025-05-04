@@ -2,7 +2,7 @@ import gymnasium as gym
 from stable_baselines3 import PPO      # SAC o TD3 también funcionan
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.callbacks import BaseCallback
-from env_rough import QuadrupedEnv
+from env_flat import QuadrupedEnv
 import os
 
 class StepPrinter(BaseCallback):
