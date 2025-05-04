@@ -23,7 +23,7 @@ class QuadrupedEnv(gym.Env):
 
         self.initial_joint_angles_deg = np.array([0, 0, -45, 0.0, 0,-45, 0.0, 0, -45, 0.0, 0, -45])
         self.initial_joint_angles_rad = np.radians(self.initial_joint_angles_deg)
-
+        self.last_action = None
         self.initial_roll = 0
         self.initial_pitch = 0
         self.step_counter = 0
@@ -44,6 +44,36 @@ class QuadrupedEnv(gym.Env):
             physicsClientId    = self.physics_client
         )
 
+    def create_rough_terrain(physics_client_id):
+        """
+        Crea un terreno irregular usando malla de altura.
+        """
+        rows = cols = 512
+        data = [0]*(rows*cols)
+        for j in range(cols//2):
+            for i in range(rows//2):
+                h = np.random.uniform(0, 0.06)
+                idx = 2*i + 2*j*rows
+                data[idx] = data[idx+1] = data[idx+rows] = data[idx+rows+1] = h
+
+        # usa p.createCollisionShape y pasa physicsClientId
+        shape = p.createCollisionShape(
+            shapeType=p.GEOM_HEIGHTFIELD,
+            meshScale=[0.09, 0.05, 1],
+            heightfieldTextureScaling=(rows-1)/2,
+            heightfieldData=data,
+            numHeightfieldRows=rows,
+            numHeightfieldColumns=cols,
+            physicsClientId=physics_client_id
+        )
+        # idem al crear el multibody
+        plane = p.createMultiBody(
+            baseMass=0,
+            baseCollisionShapeIndex=shape,
+            physicsClientId=physics_client_id
+        )
+        return plane
+
     def reset(self, seed=None, options=None):
         if seed is not None:
             np.random.seed(seed)
@@ -51,9 +81,9 @@ class QuadrupedEnv(gym.Env):
         p.resetSimulation()
         p.setGravity(0, 0, -9.8)
 
-        self.plane = p.loadURDF("plane.urdf")
+        self.plane = QuadrupedEnv.create_rough_terrain(self.physics_client)
         self.robot = p.loadURDF("laikago/laikago_toes_zup.urdf", 
-                     [0, 0, 0.5],[0, 0, 0, 1],useFixedBase=False)
+                     [0, 0, 0.55],[0, 0, 0, 1],useFixedBase=False)
 
         p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
 
@@ -79,7 +109,6 @@ class QuadrupedEnv(gym.Env):
                     contactDamping=2000
                 )'''
 
-
         self.joint_ids = [j for j in range(p.getNumJoints(self.robot)) if p.getJointInfo(self.robot, j)[2] == p.JOINT_REVOLUTE]
 
         self.link_name_map = {j: p.getJointInfo(self.robot, j)[12].decode('utf-8') for j in range(p.getNumJoints(self.robot))}
@@ -90,7 +119,7 @@ class QuadrupedEnv(gym.Env):
 
         obs = self._get_obs()
         self.step_counter = 0
-        
+        self.last_action = np.zeros(self.action_space.shape, dtype=np.float32)
         p.stepSimulation()
             
         return obs, {}
@@ -132,27 +161,34 @@ class QuadrupedEnv(gym.Env):
         p.stepSimulation()
         self.step_counter += 1
         obs = self._get_obs()
-        reward= self._compute_reward(obs)
+        reward= self._compute_reward(obs,action)
         done = self._check_done(obs)
 
         return obs, reward, done, False, {}
   
-    def _compute_reward(self, obs):
-            roll, pitch, _ = obs[30:33]
+    def _compute_reward(self, obs, action):
+            roll, pitch, yaw = obs[30:33]
             joint_velocities = obs[12:24]
             torso_vel_lin = obs[24:27]
             torso_pos, torso_orn = p.getBasePositionAndOrientation(self.robot)
-            z_pos = torso_pos[2]  
-            vel_x = torso_vel_lin[0]
-            reward_speed = 5.0 * vel_x                                 # avance +X
+            z_pos = torso_pos[2]
             z0 = 0.42   # altura nominal
-            reward_height = -20.0 * abs(z_pos - z0)
-            reward_time=1
-            reward_stability = -2.0 * (abs(roll)+abs(pitch))
+            vel_x = torso_vel_lin[0]
 
+            delta = action - self.last_action
+            reward_action = -0.1 * np.sum(delta**2)
+            # avance +X
+            reward_speed = 5.0 * vel_x    
+            # penalizacion por altura menor a 0.42
+            reward_height = -20.0 * abs(z_pos - z0)
+            # refuerzo por mantenerse vivo
+            reward_time=1
+            #penalizacion por rotar demasiado 
+            reward_stability = -2.0 * (abs(roll)+abs(pitch)+abs(yaw))
+            #penalizacion por velocidades demasiado altas en las piernas
             reward_energy = -1e-3 * np.sum(np.square(joint_velocities))
 
-            total_reward = reward_speed +reward_time+ reward_stability + reward_energy+reward_height
+            total_reward = reward_speed +reward_time+ reward_stability + reward_energy+reward_height+reward_action
             return total_reward
 
     def _check_done(self, obs):
@@ -166,3 +202,5 @@ class QuadrupedEnv(gym.Env):
   
     def close(self):
         p.disconnect(self.physics_client)
+
+      
