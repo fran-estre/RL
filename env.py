@@ -35,7 +35,7 @@ class QuadrupedEnv(gym.Env):
 
         self.plane = p.loadURDF("plane.urdf")
         self.robot = p.loadURDF("laikago/laikago_toes_zup.urdf", 
-                     [0, 0, 0.6],[0, 0, 0, 1],useFixedBase=False)
+                     [0, 0, 0.5],[0, 0, 0, 1],useFixedBase=False)
 
         p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
 
@@ -72,8 +72,8 @@ class QuadrupedEnv(gym.Env):
 
         obs = self._get_obs()
         self.step_counter = 0
-        for _ in(240*3):
-            p.stepSimulation()
+        
+        p.stepSimulation()
             
         return obs, {}
 
