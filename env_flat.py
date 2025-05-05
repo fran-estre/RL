@@ -96,7 +96,7 @@ class QuadrupedEnv(gym.Env):
                     p.setCollisionFilterGroupMask(self.robot, j, 0, 0)'''
         
         # Ajustar fricción y dinámica de contacto para los toes
-        '''toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
+        toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
         for j in range(p.getNumJoints(self.robot)):
             link_name = p.getJointInfo(self.robot, j)[12].decode("utf-8")
             if link_name in toe_links:
@@ -107,7 +107,7 @@ class QuadrupedEnv(gym.Env):
                     rollingFriction=0.4,
                     contactStiffness=30000,
                     contactDamping=2000
-                )'''
+                )
 
         self.joint_ids = [j for j in range(p.getNumJoints(self.robot)) if p.getJointInfo(self.robot, j)[2] == p.JOINT_REVOLUTE]
 

@@ -12,7 +12,7 @@ import numpy as np
 import pybullet as p
 
 from stable_baselines3 import PPO
-from env_rough import QuadrupedEnv
+from env_flat import QuadrupedEnv
 #from env import QuadrupedEnv
 def make_env():
     # Forzamos head-up: render_mode="human"
@@ -38,14 +38,14 @@ def rollout(model, env, n_episodes=10):
             # render reposiciona la cámara en tu env.render():
             env.render()
             # pausa para ver ~real time
-            time.sleep(getattr(env, "time_step", 1/240.))
+            time.sleep(getattr(env, "time_step", 3/240.))
 
         print(f"Episodio {ep:2d}: pasos={step:4d}, recompensa={total_r:7.2f}")
         rewards.append(total_r)
     return rewards
 
 def main():
-    model_path = "laikago_ppo_angles_parallel.zip"
+    model_path = "laikago_ppo_angles_flat.zip"
     assert os.path.isfile(model_path), f"No encuentro '{model_path}'"
     model = PPO.load(model_path, device="cpu")
     print(f"  Modelo cargado desde '{model_path}'\n")
