@@ -58,12 +58,12 @@ if __name__ == "__main__":
             total_timesteps=2_000_000
         )   
         print("simulacion terminada")
-        model.save("laikago_ppo_rough")
+        model.save("laikago_friccion")
         vec_env.close()
         print("Entrenamiento completado. Logs en 'logs/env_*'/monitor.csv")
     except KeyboardInterrupt:
         print("\n🛑 Entrenamiento detenido manualmente. Guardando modelo actual...")
-        model.save("laikago_ppo_angles_interrupt")
+        model.save("laikago_friccion_interrupt")
         print("✅ Modelo guardado como 'quadruped_ddpg_interrupt.zip'")
         vec_env.close()
         print("Entrenamiento completado. Logs en 'logs/env_*'/monitor.csv")

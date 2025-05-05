@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     model.learn(total_timesteps=1_000_000,callback=StepPrinter()) 
         
-    model.save("laikago_ppo_angles")
+    model.save("laikago_visual")
     
 
 
