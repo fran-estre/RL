@@ -80,12 +80,13 @@ class QuadrupedEnv(gym.Env):
         )
    
     def reset(self, seed=None, options=None):
-        if seed is not None:
-            np.random.seed(seed)
-
-        # Muestreo aleatorio de waypoint (x_g, y_g)
-        self.goal_pos = np.random.uniform(-self.goal_range, self.goal_range, size=2)
-
+        if options and 'goal_pos' in options:
+            self.goal_pos = np.array(options['goal_pos'], dtype=np.float32)
+        else:
+            θ     = np.random.uniform(0, 2*math.pi)
+            v_mod = np.random.uniform(0, 1.0)
+            self.goal_pos = np.array([math.cos(θ), math.sin(θ)]) * v_mod
+            
         # Reinicio de PyBullet
         p.resetSimulation()
         p.setGravity(0,0,-9.8)
