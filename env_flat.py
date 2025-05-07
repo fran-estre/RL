@@ -73,7 +73,82 @@ class QuadrupedEnv(gym.Env):
             physicsClientId=physics_client_id
         )
         return plane
+    def create_rough_terrain2(physics_client_id):
+        """
+        Crea un terreno irregular usando heightfield y ajustes para evitar penetraciones.
+        """
+        import numpy as np
+        import pybullet as p
 
+        # Parámetros de la grilla
+        rows = cols = 512
+        data = [0] * (rows * cols)
+        # Generar alturas en bloques 2x2 para suavizar
+        for j in range(cols // 2):
+            for i in range(rows // 2):
+                h = np.random.uniform(0, 0.06)
+                idx = 2 * i + 2 * j * rows
+                data[idx] = data[idx + 1] = data[idx + rows] = data[idx + rows + 1] = h
+
+        # Ajustes globales del motor para mejorar colisión
+        p.setPhysicsEngineParameter(
+            contactBreakingThreshold=0.001,
+            useSplitImpulse=True,
+            splitImpulsePenetrationThreshold=-0.01,
+            enableConeFriction=True,
+            physicsClientId=physics_client_id
+        )
+
+        # Crear collisionShape heightfield
+        shape = p.createCollisionShape(
+            shapeType=p.GEOM_HEIGHTFIELD,
+            meshScale=[0.2, 0.2, 2],
+            heightfieldTextureScaling=(rows - 1) / 2,
+            heightfieldData=data,
+            numHeightfieldRows=rows,
+            numHeightfieldColumns=cols,
+            physicsClientId=physics_client_id
+        )
+
+        # Crea el cuerpo estático
+        terrain = p.createMultiBody(
+            baseMass=0,
+            baseCollisionShapeIndex=shape,
+            physicsClientId=physics_client_id
+        )
+
+        # Ajustar dinámicas del terreno
+        p.changeDynamics(
+            terrain, -1,
+            lateralFriction=1.0,
+            spinningFriction=0.5,
+            rollingFriction=0.1,
+            contactStiffness=1e5,
+            contactDamping=2e3,
+            physicsClientId=physics_client_id
+        )
+
+        # Colchón invisible para evitar tunneling: plano fino justo encima
+        cushion_shape = p.createCollisionShape(
+            shapeType=p.GEOM_BOX,
+            halfExtents=[(rows * 0.2) / 2, (cols * 0.2) / 2, 0.001],
+            physicsClientId=physics_client_id
+        )
+        cushion = p.createMultiBody(
+            baseMass=0,
+            baseCollisionShapeIndex=cushion_shape,
+            basePosition=[(rows * 0.2) / 2, (cols * 0.2) / 2, 0.001],
+            physicsClientId=physics_client_id
+        )
+        p.changeDynamics(
+            cushion, -1,
+            lateralFriction=2.0,
+            contactStiffness=1e5,
+            contactDamping=2e3,
+            physicsClientId=physics_client_id
+        )
+
+        return terrain
     def reset(self, seed=None, options=None):
         if seed is not None:
             np.random.seed(seed)
@@ -96,7 +171,7 @@ class QuadrupedEnv(gym.Env):
                     p.setCollisionFilterGroupMask(self.robot, j, 0, 0)'''
         
         # Ajustar fricción y dinámica de contacto para los toes
-        toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
+        '''toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
         for j in range(p.getNumJoints(self.robot)):
             link_name = p.getJointInfo(self.robot, j)[12].decode("utf-8")
             if link_name in toe_links:
@@ -107,7 +182,7 @@ class QuadrupedEnv(gym.Env):
                     rollingFriction=0.4,
                     contactStiffness=30000,
                     contactDamping=2000
-                )
+                )'''
 
         self.joint_ids = [j for j in range(p.getNumJoints(self.robot)) if p.getJointInfo(self.robot, j)[2] == p.JOINT_REVOLUTE]
 

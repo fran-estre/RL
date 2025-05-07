@@ -34,35 +34,33 @@ class QuadrupedEnv(gym.Env):
         # Inicializa
         self.reset()
 
-    def create_rough_terrain(physics_client_id):
-        """
-        Crea un terreno irregular usando malla de altura.
-        """
+    def create_rough_terrain2(physics_client_id):
         rows = cols = 512
-        data = [0]*(rows*cols)
-        for j in range(cols//2):
-            for i in range(rows//2):
+        data = [0] * (rows * cols)
+        for j in range(cols // 2):
+            for i in range(rows // 2):
                 h = np.random.uniform(0, 0.06)
-                idx = 2*i + 2*j*rows
-                data[idx] = data[idx+1] = data[idx+rows] = data[idx+rows+1] = h
+                idx = 2 * i + 2 * j * rows
+                data[idx] = data[idx + 1] = data[idx + rows] = data[idx + rows + 1] = h
 
-        # usa p.createCollisionShape y pasa physicsClientId
         shape = p.createCollisionShape(
             shapeType=p.GEOM_HEIGHTFIELD,
-            meshScale=[0.09, 0.05, 1],
-            heightfieldTextureScaling=(rows-1)/2,
+            meshScale=[0.2, 0.2, 1],
+            heightfieldTextureScaling=(rows - 1) / 2,
             heightfieldData=data,
             numHeightfieldRows=rows,
             numHeightfieldColumns=cols,
+            flags=p.GEOM_CONCAVE_INTERNAL_EDGE,
             physicsClientId=physics_client_id
         )
-        # idem al crear el multibody
-        plane = p.createMultiBody(
+
+        terrain = p.createMultiBody(
             baseMass=0,
             baseCollisionShapeIndex=shape,
             physicsClientId=physics_client_id
         )
-        return plane    
+
+        return terrain
     
     def render(self, mode="human"):
         if mode != "human":
@@ -90,12 +88,22 @@ class QuadrupedEnv(gym.Env):
         # Reinicio de PyBullet
         p.resetSimulation()
         p.setGravity(0,0,-9.8)
-        self.plane = p.loadURDF("plane.urdf")
+        
+        
+        
+        self.plane = QuadrupedEnv.create_rough_terrain2(self.physics_client)
         self.robot = p.loadURDF("laikago/laikago_toes_zup.urdf",
-                                 [0,0,0.55],[0,0,0,1],
+                                 [0,0,0.50],[0,0,0,1],
                                  useFixedBase=False)
         # (resto de lod joints/fricción idéntico...)
-        p.changeDynamics(self.plane, -1, lateralFriction=1, spinningFriction=0.5, rollingFriction=0.1)
+        p.changeDynamics(
+            self.plane, -1,
+            lateralFriction=1.0,
+            spinningFriction=0.5,
+            rollingFriction=0.1,
+            contactStiffness=1000000,  # rigidez alta
+            contactDamping=20000        # amortiguamiento medio
+        )   
 
         lower_legs = ["FR_lower_leg", "FL_lower_leg", "RR_lower_leg", "RL_lower_leg"]
 

@@ -45,7 +45,7 @@ def rollout(model, env, n_episodes=10):
     return rewards
 
 def main():
-    model_path = "laikago_friccion.zip"
+    model_path = "laikago_ppo_flat.zip"
     assert os.path.isfile(model_path), f"No encuentro '{model_path}'"
     model = PPO.load(model_path, device="cpu")
     print(f"  Modelo cargado desde '{model_path}'\n")

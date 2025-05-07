@@ -44,36 +44,34 @@ class QuadrupedEnv(gym.Env):
             physicsClientId    = self.physics_client
         )
 
-    def create_rough_terrain(physics_client_id):
-        """
-        Crea un terreno irregular usando malla de altura.
-        """
+    def create_rough_terrain2(physics_client_id):
         rows = cols = 512
-        data = [0]*(rows*cols)
-        for j in range(cols//2):
-            for i in range(rows//2):
+        data = [0] * (rows * cols)
+        for j in range(cols // 2):
+            for i in range(rows // 2):
                 h = np.random.uniform(0, 0.06)
-                idx = 2*i + 2*j*rows
-                data[idx] = data[idx+1] = data[idx+rows] = data[idx+rows+1] = h
+                idx = 2 * i + 2 * j * rows
+                data[idx] = data[idx + 1] = data[idx + rows] = data[idx + rows + 1] = h
 
-        # usa p.createCollisionShape y pasa physicsClientId
         shape = p.createCollisionShape(
             shapeType=p.GEOM_HEIGHTFIELD,
-            meshScale=[0.09, 0.05, 1],
-            heightfieldTextureScaling=(rows-1)/2,
+            meshScale=[0.2, 0.2, 1],
+            heightfieldTextureScaling=(rows - 1) / 2,
             heightfieldData=data,
             numHeightfieldRows=rows,
             numHeightfieldColumns=cols,
+            flags=p.GEOM_CONCAVE_INTERNAL_EDGE,
             physicsClientId=physics_client_id
         )
-        # idem al crear el multibody
-        plane = p.createMultiBody(
+
+        terrain = p.createMultiBody(
             baseMass=0,
             baseCollisionShapeIndex=shape,
             physicsClientId=physics_client_id
         )
-        return plane
 
+        return terrain
+    
     def reset(self, seed=None, options=None):
         if seed is not None:
             np.random.seed(seed)
@@ -96,7 +94,7 @@ class QuadrupedEnv(gym.Env):
                     p.setCollisionFilterGroupMask(self.robot, j, 0, 0)'''
         
         # Ajustar fricción y dinámica de contacto para los toes
-        toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
+        '''toe_links = ["toeFR", "toeFL", "toeRR", "toeRL"]
         for j in range(p.getNumJoints(self.robot)):
             link_name = p.getJointInfo(self.robot, j)[12].decode("utf-8")
             if link_name in toe_links:
@@ -107,7 +105,7 @@ class QuadrupedEnv(gym.Env):
                     rollingFriction=0.4,
                     contactStiffness=30000,
                     contactDamping=2000
-                )
+                )'''
 
         self.joint_ids = [j for j in range(p.getNumJoints(self.robot)) if p.getJointInfo(self.robot, j)[2] == p.JOINT_REVOLUTE]
 
